@@ -1,0 +1,10 @@
+{
+  "chargeEnabled": true,
+  "chargeArmMs": 500,
+  "chargeFullMs": 1500,
+  "chargeSquashSpeed": 1,
+  "chargeSpeedPerSize": 10,
+  "chargeGravityScale": 0,
+  "chargePower": 1,
+  "chargeSquash": 0.45
+}

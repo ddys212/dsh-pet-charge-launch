@@ -1,0 +1,7 @@
+# 源码与文档统一用 LF，避免跨平台出现整文件伪差异
+* text=auto eol=lf
+
+# dist/ 里是**成品产物**，必须逐字节原样分发：
+# 被 Git 当文本处理会按平台转换换行符，导致哈希不一致、与上游产物对不上。
+dist/*.js -text
+patches/*.patch -text

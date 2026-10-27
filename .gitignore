@@ -1,0 +1,14 @@
+# 依赖（本仓库不需要 npm install，只用 Node 标准库）
+node_modules/
+
+# 系统垃圾
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 本地测试产物
+*.log
+*.bak
+*.bak-*
+_tmp/
+_tmp*

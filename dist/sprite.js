@@ -934,14 +934,17 @@ class PetSprite {
   }
 
   /** 抛掷驱动：重力 + 边缘反弹 + 落地摩擦，落定后写入 customPos */
-  startThrow(px, py, vx, vy, gravityScale = 1) {
+  startThrow(px, py, vx, vy, gravityOverride) {
     this.stopDragFollow();
     this.stopMove();
-    // 本次飞行的物理参数：只缩放重力（蓄力弹射默认 gravityScale=0 → 匀速直线、永不下落）。
-    // 其它参数（弹性/摩擦/顶反弹）沿用全局配置；不修改 this.physics 本身，不影响别的抛掷。
-    const chargeGs = Number.isFinite(gravityScale) && gravityScale >= 0 ? gravityScale : 1;
+    // 本次飞行的物理参数：只在给了**绝对重力**时才派生新对象，否则直接用全局配置。
+    // 蓄力弹射传「倍率 × 1400」的绝对值，所以倍率 0 = 匀速直线、倍率 1 = 正常重力，
+    // 不受用户可能设成 ~0 的全局 gravity 影响（乘全局值会让倍率失效）。
+    // 不修改 this.physics 本身，别的抛掷（拖拽/弹弓/接口）完全不受影响。
     const throwPhysics =
-      chargeGs === 1 ? this.physics : Object.assign({}, this.physics, { gravity: this.physics.gravity * chargeGs });
+      gravityOverride === undefined || gravityOverride === null
+        ? this.physics
+        : Object.assign({}, this.physics, { gravity: Math.max(0, gravityOverride) });
     // 边界 = 显示器工作区**并集**：空洞是墙（宠物再也飞不进不可见区域），屏缝不是墙（跨屏弹跳照旧）
     // confineToScreen 开启时改为锁定**松手这一刻所在的那块屏**：屏缝同样当墙，只在目标屏内弹。
     // 锁定屏在抛掷开始时定下、飞行途中不重取；relayout 改了屏数时由 throwStepRegion 退回不锁定。
@@ -1486,7 +1489,7 @@ class PetSprite {
           ' vx=' + Math.round(v.vx) + ' vy=' + Math.round(v.vy) + ' |v|=' + Math.round(v.speed),
       );
       if (v.speed > 0) {
-        this.startThrow(this.pos.x, this.pos.y, v.vx, v.vy, cp.gravityScale);
+        this.startThrow(this.pos.x, this.pos.y, v.vx, v.vy, cp.gravity);
       } else {
         this.customPos = { rx: (this.pos.x + this.halfW) / VIEW.w, ry: (this.pos.y + this.halfH) / VIEW.h };
         this.position();

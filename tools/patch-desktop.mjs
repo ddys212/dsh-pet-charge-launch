@@ -42,6 +42,9 @@ const CHARGE_FULL_MS = 1500;
 const CHARGE_SQUASH_SPEED = 1;
 const CHARGE_SPEED_PER_SIZE = 10;
 const MAX_CHARGE_SPEED = 12000;
+// 重力参考值：实际重力 = 倍率 × 本值。不用全局 physics.gravity 相乘——全局值可能被设成 ~0，
+// 那样倍率再大也等于没重力，旋钮失效。
+const CHARGE_GRAVITY_REF = 1400;
 const CHARGE_GRAVITY_SCALE = 0;
 const CHARGE_ANGLE_DEG = 90;
 // 蓄力期间转入拖拽的阈值：比 DRAG_THRESHOLD(5px) 大得多——按住等蓄力时手会抖 1~10px，
@@ -111,7 +114,8 @@ const chargeParamsOf = (physics) => {
 		speedPerSize: num(p.chargeSpeedPerSize, CHARGE_SPEED_PER_SIZE, .1, 50),
 		power: num(p.chargePower, 1, .01, 10),
 		squash: num(p.chargeSquash, CHARGE_SQUASH, .2, 1),
-		gravityScale: num(p.chargeGravityScale, CHARGE_GRAVITY_SCALE, 0, 5)
+		gravityScale: num(p.chargeGravityScale, CHARGE_GRAVITY_SCALE, 0, 5),
+		gravity: num(p.chargeGravityScale, CHARGE_GRAVITY_SCALE, 0, 5) * CHARGE_GRAVITY_REF
 	};
 };
 `;
@@ -123,6 +127,7 @@ exports.CHARGE_ANGLE_DEG = CHARGE_ANGLE_DEG
 exports.CHARGE_ARM_MS = CHARGE_ARM_MS
 exports.CHARGE_DRAG_THRESHOLD = CHARGE_DRAG_THRESHOLD
 exports.CHARGE_FULL_MS = CHARGE_FULL_MS
+exports.CHARGE_GRAVITY_REF = CHARGE_GRAVITY_REF
 exports.CHARGE_GRAVITY_SCALE = CHARGE_GRAVITY_SCALE
 exports.CHARGE_SPEED_PER_SIZE = CHARGE_SPEED_PER_SIZE
 exports.CHARGE_SQUASH = CHARGE_SQUASH
@@ -157,20 +162,23 @@ sprite = patch(
 );
 
 // ============================================================
-// ③ sprite.js：startThrow 支持重力缩放
+// ③ sprite.js：startThrow 支持「绝对重力覆盖」
 // ============================================================
 sprite = patch(
   sprite,
   'sprite: startThrow 签名',
   '  startThrow(px, py, vx, vy) {\n    this.stopDragFollow();\n    this.stopMove();',
-  `  startThrow(px, py, vx, vy, gravityScale = 1) {
+  `  startThrow(px, py, vx, vy, gravityOverride) {
     this.stopDragFollow();
     this.stopMove();
-    // 本次飞行的物理参数：只缩放重力（蓄力弹射默认 gravityScale=0 → 匀速直线、永不下落）。
-    // 其它参数（弹性/摩擦/顶反弹）沿用全局配置；不修改 this.physics 本身，不影响别的抛掷。
-    const chargeGs = Number.isFinite(gravityScale) && gravityScale >= 0 ? gravityScale : 1;
+    // 本次飞行的物理参数：只在给了**绝对重力**时才派生新对象，否则直接用全局配置。
+    // 蓄力弹射传「倍率 × 1400」的绝对值，所以倍率 0 = 匀速直线、倍率 1 = 正常重力，
+    // 不受用户可能设成 ~0 的全局 gravity 影响（乘全局值会让倍率失效）。
+    // 不修改 this.physics 本身，别的抛掷（拖拽/弹弓/接口）完全不受影响。
     const throwPhysics =
-      chargeGs === 1 ? this.physics : Object.assign({}, this.physics, { gravity: this.physics.gravity * chargeGs });`,
+      gravityOverride === undefined || gravityOverride === null
+        ? this.physics
+        : Object.assign({}, this.physics, { gravity: Math.max(0, gravityOverride) });`,
 );
 
 sprite = patch(sprite, 'sprite: throwStepRegion 用 throwPhysics(1)', 'S.throwStepRegion(state, dt / substeps, sp, this.physics, lockScreen)', 'S.throwStepRegion(state, dt / substeps, sp, throwPhysics, lockScreen)');
@@ -394,7 +402,7 @@ sprite = patch(
           ' vx=' + Math.round(v.vx) + ' vy=' + Math.round(v.vy) + ' |v|=' + Math.round(v.speed),
       );
       if (v.speed > 0) {
-        this.startThrow(this.pos.x, this.pos.y, v.vx, v.vy, cp.gravityScale);
+        this.startThrow(this.pos.x, this.pos.y, v.vx, v.vy, cp.gravity);
       } else {
         this.customPos = { rx: (this.pos.x + this.halfW) / VIEW.w, ry: (this.pos.y + this.halfH) / VIEW.h };
         this.position();

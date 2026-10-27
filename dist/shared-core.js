@@ -1317,6 +1317,9 @@ const CHARGE_FULL_MS = 1500;
 const CHARGE_SQUASH_SPEED = 1;
 const CHARGE_SPEED_PER_SIZE = 10;
 const MAX_CHARGE_SPEED = 12000;
+// 重力参考值：实际重力 = 倍率 × 本值。不用全局 physics.gravity 相乘——全局值可能被设成 ~0，
+// 那样倍率再大也等于没重力，旋钮失效。
+const CHARGE_GRAVITY_REF = 1400;
 const CHARGE_GRAVITY_SCALE = 0;
 const CHARGE_ANGLE_DEG = 90;
 // 蓄力期间转入拖拽的阈值：比 DRAG_THRESHOLD(5px) 大得多——按住等蓄力时手会抖 1~10px，
@@ -1386,7 +1389,8 @@ const chargeParamsOf = (physics) => {
 		speedPerSize: num(p.chargeSpeedPerSize, CHARGE_SPEED_PER_SIZE, .1, 50),
 		power: num(p.chargePower, 1, .01, 10),
 		squash: num(p.chargeSquash, CHARGE_SQUASH, .2, 1),
-		gravityScale: num(p.chargeGravityScale, CHARGE_GRAVITY_SCALE, 0, 5)
+		gravityScale: num(p.chargeGravityScale, CHARGE_GRAVITY_SCALE, 0, 5),
+		gravity: num(p.chargeGravityScale, CHARGE_GRAVITY_SCALE, 0, 5) * CHARGE_GRAVITY_REF
 	};
 };
 const throwBounds = (o) => {
@@ -2220,6 +2224,7 @@ exports.CHARGE_ANGLE_DEG = CHARGE_ANGLE_DEG
 exports.CHARGE_ARM_MS = CHARGE_ARM_MS
 exports.CHARGE_DRAG_THRESHOLD = CHARGE_DRAG_THRESHOLD
 exports.CHARGE_FULL_MS = CHARGE_FULL_MS
+exports.CHARGE_GRAVITY_REF = CHARGE_GRAVITY_REF
 exports.CHARGE_GRAVITY_SCALE = CHARGE_GRAVITY_SCALE
 exports.CHARGE_SPEED_PER_SIZE = CHARGE_SPEED_PER_SIZE
 exports.CHARGE_SQUASH = CHARGE_SQUASH

@@ -48,19 +48,41 @@ speed = size × chargeSpeedPerSize × p^1.6 × chargePower × throwPower
 
 方向固定 `90°`（正上方）。`chargeVelocity` 复用 `throwVelocity` 的角度约定（0 = 正右，逆时针为正，`vy` 取负）。
 
-## 重力隔离
+## 重力：只对本次飞行生效，且用绝对量级
 
-需求是"弹射后不要掉下来"，但不能把全局重力设成 0（那样普通拖拽甩出去的宠物也永远不落地）。
+需求是"弹射要不要下落由这个旋钮决定"，但不能改全局重力（那样普通拖拽甩出去的宠物行为也变了）。
 
-做法是给 `startThrow` 加一个 `gravityScale` 参数，**只对本次飞行**生效：
+做法是给 `startThrow` 加一个**绝对重力覆盖**参数，**只对本次飞行**生效：
 
 ```js
-const throwPhysics = gs === 1
-  ? cfg.physics
-  : { ...cfg.physics, gravity: cfg.physics.gravity * gs };
+const throwPhysics =
+  gravityOverride === undefined || gravityOverride === null
+    ? cfg.physics                                        // 其它来源：完全用配置
+    : { ...cfg.physics, gravity: Math.max(0, gravityOverride) };  // 蓄力弹射：替换重力
 ```
 
-不修改配置对象本身，所以其它来源的抛掷（拖拽、弹弓、接口指令）完全不受影响。
+不修改配置对象本身，所以拖拽、弹弓、接口指令的抛掷完全不受影响。
+
+### 为什么是绝对值而不是"倍率 × 全局重力"
+
+早期版本用的是 `cfg.physics.gravity * scale`，结果踩了坑：用户把全局重力设成 **1**（≈无重力）后，`1 × 5 = 5` 依然等于没有重力——旋钮彻底失效，用户设了重力却发现宠物不落地。
+
+改成绝对量级后：
+
+```
+实际重力 = chargeGravityScale × CHARGE_GRAVITY_REF(1400)
+```
+
+`chargeGravityScale = 1` 恒定等于"正常重力量级"，与全局设置解耦，手感可预期。
+
+### 想停下来还差一个条件
+
+重力只让宠物**落下**，能不能**停住**取决于全局弹性 `restitution`：
+
+- `restitution = 1`（完全弹性）：每次落地按原速弹回，振幅不衰减 → 永远弹（实测 60 秒 180 次）
+- `restitution < 1`：振幅逐次衰减 → 最终 `atRest`
+
+`atRest` 的判定在 `throwStep` 里：贴地且 `|vy| < 1` 且 `|vx| < REST_VX(15)`，或碰边后整体速度低于 `REST_VY(40)`。所以弹性为 1 时这个条件永远不成立。
 
 ## 两个关键坑
 

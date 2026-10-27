@@ -1697,6 +1697,7 @@ const CHARGE_FULL_MS = 1500;
 const CHARGE_SQUASH_SPEED = 1;
 const CHARGE_SPEED_PER_SIZE = 10;
 const MAX_CHARGE_SPEED = 12e3;
+const CHARGE_GRAVITY_REF = 1400;
 const CHARGE_GRAVITY_SCALE = 0;
 const chargeProgress = (holdMs, armMs = CHARGE_ARM_MS, fullMs = CHARGE_FULL_MS, squashSpeed = CHARGE_SQUASH_SPEED) => {
 	const arm = Number.isFinite(armMs) && armMs >= 0 ? armMs : CHARGE_ARM_MS;
@@ -1756,6 +1757,17 @@ const chargeVelocity = (holdMs, size, angleDeg = CHARGE_ANGLE_DEG, speedPerSize 
 		speed
 	};
 };
+const DEFAULT_CHARGE = {
+	enabled: false,
+	armMs: CHARGE_ARM_MS,
+	fullMs: CHARGE_FULL_MS,
+	squashSpeed: CHARGE_SQUASH_SPEED,
+	speedPerSize: CHARGE_SPEED_PER_SIZE,
+	power: 1,
+	squash: CHARGE_SQUASH,
+	gravityScale: CHARGE_GRAVITY_SCALE,
+	gravity: CHARGE_GRAVITY_SCALE * CHARGE_GRAVITY_REF
+};
 const chargeParamsOf = (physics) => {
 	const p = physics ?? {};
 	const num = (v, def, min, max) => {
@@ -1771,7 +1783,8 @@ const chargeParamsOf = (physics) => {
 		speedPerSize: num(p.chargeSpeedPerSize, CHARGE_SPEED_PER_SIZE, .1, 50),
 		power: num(p.chargePower, 1, .01, 10),
 		squash: num(p.chargeSquash, CHARGE_SQUASH, .2, 1),
-		gravityScale: num(p.chargeGravityScale, CHARGE_GRAVITY_SCALE, 0, 5)
+		gravityScale: num(p.chargeGravityScale, CHARGE_GRAVITY_SCALE, 0, 5),
+		gravity: num(p.chargeGravityScale, CHARGE_GRAVITY_SCALE, 0, 5) * CHARGE_GRAVITY_REF
 	};
 };
 const throwBounds = (o) => {
@@ -2364,7 +2377,7 @@ const zh = {
 	"physics.chargeSpeedPerSize": "最大弹射速度（身宽/秒）",
 	"physics.chargeSpeedPerSizeHint": "0.1~50，默认 10 = 蓄满时每秒飞过 10 个宠物身宽（300px 的宠物约 3000px/s）。实际速度随蓄力进度递增，蓄满才达到这个值。",
 	"physics.chargeGravityScale": "弹射重力倍率",
-	"physics.chargeGravityScaleHint": "0~5，默认 0 = 不受重力，匀速直线飞出、永不下落；1 = 与普通拖拽甩抛相同（会落下）。只影响蓄力弹射，普通甩抛不变。",
+	"physics.chargeGravityScaleHint": "0~5，默认 0 = 不受重力，匀速直线飞出、永不下落。1 = 1400px/s²（正常重力量级，与全局「重力」那一项无关——全局值可能很小，乘上去会让本项失效）。注意：**要让它落地后停住，全局「弹性 restitution」必须小于 1**；弹性为 1（完全弹性）时每次落地都原样弹回，重力再大也永远停不下来。",
 	"physics.chargePower": "弹射力度（倍率）",
 	"physics.chargePowerHint": "0~10，默认 1。乘在「最大弹射速度」上的额外倍率；一般用上面的速度调，这项留着微调用。",
 	"physics.chargeSquash": "压缩深度（比例）",
@@ -2535,7 +2548,7 @@ const en = {
 	"physics.chargeSpeedPerSize": "Max launch speed (body-widths/s)",
 	"physics.chargeSpeedPerSizeHint": "0.1–50, default 10 — at full squash it flies ten body-widths per second (≈3000 px/s for a 300 px pet). Actual speed ramps up with charge progress; this is the maximum.",
 	"physics.chargeGravityScale": "Launch gravity (×)",
-	"physics.chargeGravityScaleHint": "0–5, default 0 — no gravity, flies in a straight line and never falls. 1 = same as a normal drag throw (it falls). Affects charge launches only.",
+	"physics.chargeGravityScaleHint": "0–5, default 0 — no gravity, flies in a straight line and never falls. 1 = 1400 px/s² (normal gravity; independent of the global \"Gravity\" setting, which may be near zero and would nullify this). Note: for it to land and stay put, the global \"Bounciness\" must be below 1 — at 1 (perfectly elastic) it rebounds forever no matter how strong gravity is.",
 	"physics.chargePower": "Launch power (×)",
 	"physics.chargePowerHint": "0–10, default 1. Extra multiplier on top of \"Max launch speed\"; tune with launch speed first, use this for fine-tuning.",
 	"physics.chargeSquash": "Squash depth (ratio)",
@@ -4674,9 +4687,12 @@ function makePetUI(rt) {
 			dragFollowRef.current = requestAnimationFrame(step);
 		};
 		/** 抛掷驱动：重力 + 边缘反弹 + 落地摩擦，落定后提交 customPos（飞行中只改 DOM，避免逐帧 React 重渲染）。
-		*  `gravityScale` 缩放本次飞行的重力（默认 1 = 与配置一致）；蓄力弹射传 0 → 匀速直线飞出、永不下落。
+		*
+		*  `gravityOverride`（可选，绝对值 px/s²）：只对**本次**飞行替换重力，其余参数（弹性/摩擦/顶反弹）
+		*  仍用全局配置；不传 = 完全用配置。蓄力弹射传 `cp.gravity`（= 倍率 × 1400），
+		*  所以倍率 0 时是匀速直线、倍率 1 时是正常重力量级——与用户可能设成 ~0 的全局 gravity 解耦。
 		*  只作用于这一次抛掷，不改配置、不影响其它来源的甩抛。 */
-		const startThrow = (px, py, vx, vy, gravityScale = 1) => {
+		const startThrow = (px, py, vx, vy, gravityOverride) => {
 			stopDragFollow();
 			stopMove();
 			const bounds = throwBounds({
@@ -4685,10 +4701,9 @@ function makePetUI(rt) {
 				size,
 				sideAllow
 			});
-			const gs = Number.isFinite(gravityScale) && gravityScale >= 0 ? gravityScale : 1;
-			const throwPhysics = gs === 1 ? cfg.physics : {
+			const throwPhysics = gravityOverride === void 0 || gravityOverride === null ? cfg.physics : {
 				...cfg.physics,
-				gravity: cfg.physics.gravity * gs
+				gravity: Math.max(0, gravityOverride)
 			};
 			const token = ++throwTokenRef.current;
 			let state = {
@@ -5351,7 +5366,7 @@ function makePetUI(rt) {
 				setTimeout(() => {
 					justDraggedRef.current = false;
 				}, 100);
-				if (v.speed > 0) startThrow(px, py, v.vx, v.vy, cp.gravityScale);
+				if (v.speed > 0) startThrow(px, py, v.vx, v.vy, cp.gravity);
 				else setCustomPos({
 					rx: (px + halfW) / window.innerWidth,
 					ry: (py + halfH) / window.innerHeight

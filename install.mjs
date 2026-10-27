@@ -283,7 +283,11 @@ for (const f of FILES) {
 
 // ---------- 用户配置：只补缺失的键 ----------
 console.log('\n\x1b[1m3/3 用户配置\x1b[0m');
-let userDoc = { pets: [] };
+// 全新用户（没有 main-config.jsonc）时**绝不能**写入 `pets: []`：
+// 用户层的 pets 是整段替换语义，写空数组等于把插件内置的宠物列表整个清空——
+// 用户装完补丁会发现宠物不见了。所以这里只写 physics 段，pets 一律不碰：
+// 文件里原来没有 pets 键，就保持没有，让插件继续用内置默认。
+let userDoc = {};
 if (existsSync(USER_CFG)) {
   try {
     userDoc = parseJsonc(readFileSync(USER_CFG, 'utf8'));
@@ -298,7 +302,7 @@ if (existsSync(USER_CFG)) {
   ok('已备份 main-config.jsonc → main-config.jsonc.bak-' + stamp);
 } else {
   mkdirSync(USER_DIR, { recursive: true });
-  info('用户配置不存在，将新建一份');
+  info('用户配置不存在，将新建一份（只写 physics 段，不动宠物列表）');
 }
 
 userDoc.physics = userDoc.physics || {};
@@ -315,12 +319,19 @@ if (!('chargeEnabled' in userDoc.physics) || added.includes('chargeEnabled')) {
 }
 
 // --with-desktop：把宠物显示位置设为「桌面 + 网页」
-if (WITH_DESKTOP && Array.isArray(userDoc.pets)) {
-  for (const p of userDoc.pets) {
-    if (p && p.display === 'web') {
-      p.display = 'both';
-      ok('宠物「' + (p.name || p.id) + '」显示位置：网页 → 桌面 + 网页');
+if (WITH_DESKTOP) {
+  if (Array.isArray(userDoc.pets) && userDoc.pets.length) {
+    for (const p of userDoc.pets) {
+      if (p && p.display === 'web') {
+        p.display = 'both';
+        ok('宠物「' + (p.name || p.id) + '」显示位置：网页 → 桌面 + 网页');
+      }
     }
+  } else {
+    // 没有自定义宠物条目 = 用的是插件内置默认宠物，这里**不能**凭空造一个 pets 数组
+    // （那会把内置列表顶掉）。提示用户去设置面板改，最安全。
+    info('你的配置里没有自定义宠物列表（用的是插件内置宠物），无法在此改显示位置');
+    info('→ 请在「设置 → 桌宠配置 → 宠物列表」里把显示位置改成「桌面 + 网页」');
   }
 }
 
